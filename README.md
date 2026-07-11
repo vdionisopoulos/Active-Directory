@@ -49,4 +49,4 @@ Issues and PRs welcome — especially real-world migration war stories for the t
 
 ## License
 
-GPL-3.0 — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
