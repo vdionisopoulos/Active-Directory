@@ -159,20 +159,90 @@ try {
     Add-Check 'L2' 'krbtgt password age' 'WARN' $_.Exception.Message
 }
 
-# 2.x LDAP signing requirement on DCs (registry proxy check on reachable DCs)
+# 2.x LDAP signing + channel binding on DCs (registry proxy check on reachable DCs)
 foreach ($dc in $dcs) {
     try {
-        $val = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
-            (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\NTDS\Parameters' -Name 'LDAPServerIntegrity' -ErrorAction SilentlyContinue).LDAPServerIntegrity
+        $ntds = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
+            Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\NTDS\Parameters' -ErrorAction SilentlyContinue |
+                Select-Object LDAPServerIntegrity, LdapEnforceChannelBinding
         } -ErrorAction Stop
-        if ($val -eq 2) {
+
+        if ($ntds.LDAPServerIntegrity -eq 2) {
             Add-Check 'L2' "LDAP signing required on $($dc.Name)" 'PASS' 'Require signing (2)'
         } else {
-            Add-Check 'L2' "LDAP signing required on $($dc.Name)" 'WARN' "Value=$val — set to 2 to block LDAP relay"
+            Add-Check 'L2' "LDAP signing required on $($dc.Name)" 'WARN' "Value=$($ntds.LDAPServerIntegrity) — set to 2 to block LDAP relay"
+        }
+
+        if ($ntds.LdapEnforceChannelBinding -eq 2) {
+            Add-Check 'L2' "LDAP channel binding on $($dc.Name)" 'PASS' 'Always (2)'
+        } else {
+            Add-Check 'L2' "LDAP channel binding on $($dc.Name)" 'WARN' "Value=$($ntds.LdapEnforceChannelBinding) — set to 2 (Always) to block LDAPS relay"
         }
     } catch {
-        Add-Check 'L2' "LDAP signing on $($dc.Name)" 'WARN' "Could not query remotely"
+        Add-Check 'L2' "LDAP hardening on $($dc.Name)" 'WARN' "Could not query remotely"
     }
+}
+
+# 2.1 Windows LAPS — schema present + passwords being managed
+try {
+    # Modern Windows LAPS attribute: msLAPS-Password / msLAPS-EncryptedPassword
+    # Legacy LAPS attribute: ms-Mcs-AdmPwd
+    $schemaNC = (Get-ADRootDSE).schemaNamingContext
+    $modernLaps = Get-ADObject -SearchBase $schemaNC -Filter "name -eq 'ms-LAPS-Password'" -ErrorAction SilentlyContinue
+    $legacyLaps = Get-ADObject -SearchBase $schemaNC -Filter "name -eq 'ms-Mcs-AdmPwd'" -ErrorAction SilentlyContinue
+
+    if ($modernLaps) {
+        Add-Check 'L2' 'Windows LAPS schema' 'PASS' 'Modern Windows LAPS attributes present'
+    } elseif ($legacyLaps) {
+        Add-Check 'L2' 'Windows LAPS schema' 'WARN' 'Only legacy LAPS schema found — plan migration to Windows LAPS'
+    } else {
+        Add-Check 'L2' 'Windows LAPS schema' 'FAIL' 'No LAPS schema found — local admin passwords likely shared/static'
+    }
+
+    # Are any computers actually storing a managed password?
+    if ($modernLaps -or $legacyLaps) {
+        $prop = if ($modernLaps) { 'msLAPS-PasswordExpirationTime' } else { 'ms-Mcs-AdmPwdExpirationTime' }
+        $managed = @(Get-ADComputer -Filter "$prop -like '*'" -ErrorAction SilentlyContinue)
+        if ($managed.Count -gt 0) {
+            Add-Check 'L2' 'LAPS-managed computers' 'PASS' "$($managed.Count) computers have a managed local admin password"
+        } else {
+            Add-Check 'L2' 'LAPS-managed computers' 'WARN' 'Schema present but no computers are managing a password yet'
+        }
+    }
+} catch {
+    Add-Check 'L2' 'Windows LAPS check' 'WARN' $_.Exception.Message
+}
+
+# 2.4 SMB signing required on DCs (SYSVOL/NETLOGON exposure makes DCs a priority)
+foreach ($dc in $dcs) {
+    try {
+        $smb = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
+            (Get-SmbServerConfiguration).RequireSecuritySignature
+        } -ErrorAction Stop
+        if ($smb) {
+            Add-Check 'L2' "SMB signing required on $($dc.Name)" 'PASS' 'RequireSecuritySignature = True'
+        } else {
+            Add-Check 'L2' "SMB signing required on $($dc.Name)" 'FAIL' 'Not required — open to SMB relay'
+        }
+    } catch {
+        Add-Check 'L2' "SMB signing on $($dc.Name)" 'WARN' "Could not query remotely"
+    }
+}
+
+# 2.6 Deny-logon rights — heuristic: is there a GPO that looks like tiering deny-rights?
+# We cannot fully evaluate applied user-rights domain-wide from here, so we look for
+# GPOs whose name suggests tiering/logon-restriction and flag if none exist.
+try {
+    Import-Module GroupPolicy -ErrorAction Stop
+    $gpos = Get-GPO -All -ErrorAction Stop
+    $denyGpos = @($gpos | Where-Object { $_.DisplayName -match 'deny|tier|logon.?restrict|admin.?restrict' })
+    if ($denyGpos.Count -gt 0) {
+        Add-Check 'L2' 'Deny-logon / tiering GPO present' 'PASS' "$($denyGpos.Count) candidate GPO(s): $((($denyGpos | Select-Object -First 3).DisplayName) -join ', ')"
+    } else {
+        Add-Check 'L2' 'Deny-logon / tiering GPO present' 'WARN' 'No GPO name suggests admin logon restrictions — verify deny-rights manually'
+    }
+} catch {
+    Add-Check 'L2' 'Deny-logon GPO check' 'WARN' "GroupPolicy module unavailable or query failed"
 }
 
 # ---------------------------------------------------------------------------
