@@ -1,0 +1,4 @@
+# Reports / local artifacts
+*.csv
+*.html
+ad-maturity*.json
