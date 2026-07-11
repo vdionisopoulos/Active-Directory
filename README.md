@@ -26,6 +26,7 @@ Sysadmins and infrastructure engineers running on-prem or hybrid AD who need to 
 ```
 docs/            Staged guides (one directory per maturity level)
 scripts/         PowerShell — assessment and remediation helpers
+lab/             Reproducible Hyper-V lab to test the controls hands-on
 gpo-templates/   Reference GPO settings per level
 diagrams/        Tiering architecture and attack-path diagrams
 ```
