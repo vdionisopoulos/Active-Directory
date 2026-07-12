@@ -33,6 +33,7 @@ On a 32 GB host all four run comfortably. For DC-only work, DC01 alone is enough
 |--------|---------|---------|
 | `01-Create-DC01-VM.ps1` | **Host** (elevated) | Validates Hyper-V prerequisites, creates the internal switch, provisions the DC01 VM, boots it from the ISO. |
 | `02-Promote-DC01.ps1` | **Inside DC01** (elevated) | Installs AD DS + DNS and promotes DC01 to the first DC of forest `corp.lab`. |
+| `03-Create-Lab-VMs.ps1` | **Host** (elevated) | Provisions WS01, WS02 (Windows 11, with TPM 2.0 enabled) and ATTACK (Kali), all on the isolated switch. |
 
 ### Step 1 — create the VM (on the host)
 
