@@ -21,6 +21,57 @@ Sysadmins and infrastructure engineers running on-prem or hybrid AD who need to 
 
 **The rule of progression:** do not skip levels. Deploying a tiering model on top of a domain full of kerberoastable service accounts and unpatched DCs is security theater. Each level assumes the previous ones are done.
 
+## The destination: the tiering model
+
+Every level in this roadmap builds toward one structural goal — **a credential is only ever exposed on systems at its own trust level or higher, and never touches a lower tier.** Break the path from the most-exposed systems (workstations) to the most-privileged (domain controllers), and a phished laptop no longer leads to domain compromise.
+
+```mermaid
+flowchart TB
+    subgraph T0["🔴 Tier 0 — Identity Control"]
+        direction LR
+        DC[Domain Controllers]
+        EA[Enterprise / Domain Admins]
+        PKI[PKI · Entra Connect · ADFS]
+    end
+
+    subgraph T1["🟠 Tier 1 — Servers & Applications"]
+        direction LR
+        SRV[Member Servers]
+        APP[Business Applications]
+        SVC[Service Accounts / gMSA]
+    end
+
+    subgraph T2["🟡 Tier 2 — Workstations & Users"]
+        direction LR
+        WS[Workstations]
+        USR[End Users]
+        HD[Help Desk / Desktop Admins]
+    end
+
+    T0 -.->|"❌ Tier 0 admins NEVER log on to lower tiers"| T1
+    T1 -.->|"❌ Tier 1 admins NEVER log on to Tier 2"| T2
+
+    T0 === PAW0[Tier 0 PAW]
+    T1 === PAW1[Tier 1 PAW]
+
+    style T0 fill:#3a1a1a,stroke:#d46b6b,stroke-width:2px,color:#fff
+    style T1 fill:#3a2a1a,stroke:#d49b6b,stroke-width:2px,color:#fff
+    style T2 fill:#3a3a1a,stroke:#d4c46b,stroke-width:2px,color:#fff
+    style DC fill:#5a2d2d,stroke:#d46b6b,color:#fff
+    style EA fill:#5a2d2d,stroke:#d46b6b,color:#fff
+    style PKI fill:#5a2d2d,stroke:#d46b6b,color:#fff
+    style SRV fill:#5a4a2d,stroke:#d49b6b,color:#fff
+    style APP fill:#5a4a2d,stroke:#d49b6b,color:#fff
+    style SVC fill:#5a4a2d,stroke:#d49b6b,color:#fff
+    style WS fill:#5a5a2d,stroke:#d4c46b,color:#fff
+    style USR fill:#5a5a2d,stroke:#d4c46b,color:#fff
+    style HD fill:#5a5a2d,stroke:#d4c46b,color:#fff
+    style PAW0 fill:#2d2d4a,stroke:#6b6bd4,color:#fff
+    style PAW1 fill:#2d2d4a,stroke:#6b6bd4,color:#fff
+```
+
+The dashed arrows are the enforced boundaries: higher-tier accounts never authenticate on lower-tier machines, so compromising an exposed tier yields nothing that reaches a privileged one. Administrators work from dedicated **Privileged Access Workstations (PAWs)** per tier. Full detail — and the migration path from a flat domain — is in [Level 5](docs/05-tiering-model/README.md).
+
 ## Repository layout
 
 ```
