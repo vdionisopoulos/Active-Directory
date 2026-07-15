@@ -314,6 +314,12 @@ Issues encountered building this lab, and their fixes — so you don't have to r
 | psexec authenticates but `Error performing the uninstallation` | Windows Defender quarantined the default impacket service binary | Expected — see the "defense in depth" note in Demo 1; not an auth failure |
 | `Set-MpPreference -DisableRealtimeMonitoring $true` has no effect | Tamper Protection blocks programmatic disable | Expected on modern Win11; disable via Windows Security UI + reboot if truly needed |
 | Kali `eth0` has no IP | No DHCP on the isolated switch | `sudo ip addr add 10.0.0.50/24 dev eth0` (Part C.2) |
+| After a reboot, Kali `eth0` has no IPv4 and a second `eth1` sits on `192.168.178.x`; attacks time out | ATTACK came back up with an external adapter (e.g. `Cable Switch`) still attached — this is why a previously "re-isolated" box loses isolation across reboots | On the host: `Get-VMNetworkAdapter -VMName ATTACK \| ? SwitchName -eq 'Cable Switch' \| Remove-VMNetworkAdapter`, then re-add the lab IP on `eth0` |
+| Kali: `ping ... Network is unreachable` even though `eth0` shows `10.0.0.50` | No connected route for the subnet (IP added without a matching route, or NetworkManager cleared it) | `sudo ip route add 10.0.0.0/24 dev eth0` |
+| Host `ssh <kali>` times out after isolating Kali | Host has no interface on the internal switch's subnet, so no path to `10.0.0.50` | `New-NetIPAddress -InterfaceAlias 'vEthernet (AD-Lab-Net)' -IPAddress 10.0.0.1 -PrefixLength 24` (elevated) — this is the correct way to SSH an internet-less Kali |
+| `New-NetIPAddress ... Access is denied` (error 5) | PowerShell not elevated; Hyper-V / NetTCPIP cmdlets need admin | Run PowerShell as Administrator |
+| `rdate` / `ntpdate: command not found`, and no internet to install them | Isolated Kali can't reach a time source; Kerberos rejects tickets on >5 min clock skew | Set time by hand in UTC from the DC: `(Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss")` on DC01, then `sudo date -u -s "..."` on Kali |
+| hashcat: `No OpenCL ... platform found` | A Hyper-V VM exposes no GPU/OpenCL runtime | Crack with John the Ripper on CPU instead (`john --format=krb5tgs ...`) |
 
 ---
 
@@ -324,5 +330,6 @@ Attack/defense walkthroughs, each mapped to a maturity level, with proof screens
 | Demo | Maps to | Shows |
 |------|---------|-------|
 | [01 — Pass-the-Hash vs LAPS](demos/01-pass-the-hash-laps/) | [Level 2.1](../docs/02-quick-wins/README.md#21-windows-laps) | Shared local admin password → lateral movement; unique passwords (LAPS) stop it. |
+| [02 — Kerberoasting vs gMSA](demos/02-kerberoasting-gmsa/) | [Level 3](../docs/03-credential-hardening/README.md) | Any authenticated user roasts a weak service account offline; a gMSA + AES-only makes the same attack find nothing. |
 
-More demos planned: Kerberoasting → gMSA (Level 3), DCSync / BloodHound attack paths (Level 3.5), and tier-violation detection (Level 4).
+More demos planned: DCSync / BloodHound attack paths (Level 3.5), and tier-violation detection (Level 4).
